@@ -1,62 +1,64 @@
 import numpy as np
 import cv2
+import keras
 import matplotlib.pyplot as plt
-from keras.models import load_model
-from keras.preprocessing import image
-from keras.applications.vgg16 import preprocess_input
-from keras.utils import to_categorical
 
-# Các lớp động vật (tương ứng với các chỉ số lớp trong mô hình)
-animals = ['squirrel', 'horse', 'butterfly', 'cow', 'cat', 'sheep', 'chicken', 'elephant', 'spider', 'dog']
+# Bước 1: Tải lại mô hình đã huấn luyện
+model = keras.models.load_model('vgg16_transferlearning.h5')
 
-# Tải mô hình đã huấn luyện (giả sử mô hình đã được lưu ở dạng file .model)
-model = load_model('VGG16-transferlearning.model')
+name_animal = ['squirrel', 'horse', 'butterfly', 'cow', 'cat', 'sheep', 'chicken', 'elephant', 'spider', 'dog']
 
-# Hàm tiền xử lý ảnh đầu vào
+# Bước 2: Xử lý ảnh mới
 def preprocess_image(image_path):
-    # Đọc ảnh và chuyển đổi màu từ BGR (OpenCV) sang RGB
     img = cv2.imread(image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # Đảm bảo rằng ảnh có kích thước 224x224
-    img = cv2.resize(img, (224, 224))
+    # Chỉnh sửa kích thước ảnh cho phù hợp với mô hình VGG16 (224x224)
+    if img.shape[0] > img.shape[1]:
+        tile_size = (int(img.shape[1] * 256 / img.shape[0]), 256)
+    else:
+        tile_size = (256, int(img.shape[0] * 256 / img.shape[1]))
 
-    # Tiền xử lý ảnh cho VGG16
-    img_array = image.img_to_array(img)  # Chuyển đổi ảnh thành mảng numpy
-    img_array = np.expand_dims(img_array, axis=0)  # Thêm chiều batch
-    img_array = preprocess_input(img_array)  # Tiền xử lý cho VGG16
+    img = centering_image(cv2.resize(img, dsize=tile_size))
 
-    return img_array
+    # Cắt ra khu vực trung tâm (224x224)
+    img = img[16:240, 16:240]
+    img = img.astype('float32') / 255  # Chuẩn hóa ảnh
+    return img
 
-# Hàm dự đoán động vật
-def predict_animal(image_path):
-    # Tiền xử lý ảnh
-    img_array = preprocess_image(image_path)
-    
-    # Dự đoán với mô hình
-    predictions = model.predict(img_array)
-    
-    # Lấy chỉ mục của lớp có xác suất cao nhất
-    predicted_class = np.argmax(predictions)
-    
-    return predicted_class, predictions[0][predicted_class]
+# Bước 3: Dự đoán một ảnh mới
+def predict_image(image_path):
+    img = preprocess_image(image_path)  # Tiền xử lý ảnh
+    img = np.expand_dims(img, axis=0)  # Thêm batch dimension (1, 224, 224, 3)
 
-# Hàm hiển thị ảnh và kết quả dự đoán
-def display_image_and_prediction(image_path):
-    # Dự đoán kết quả
-    predicted_class, probability = predict_animal(image_path)
+    prediction = model.predict(img)  # Dự đoán
+    predicted_class = np.argmax(prediction, axis=1)[0]  # Lấy lớp dự đoán có xác suất cao nhất
+
+    return predicted_class
+
+
+def centering_image(img):
+    size = [256, 256]  # Kích thước hình ảnh cuối cùng
+    img_size = img.shape[:2]
     
-    # Hiển thị ảnh
+    # Căn giữa hình ảnh
+    row = (size[1] - img_size[0]) // 2
+    col = (size[0] - img_size[1]) // 2
+    resized = np.zeros(list(size) + [img.shape[2]], dtype=np.uint8)
+    resized[row:(row + img.shape[0]), col:(col + img.shape[1])] = img
+    
+    return resized
+
+# Bước 4: Hiển thị kết quả
+def show_result(image_path, predicted_class):
     img = cv2.imread(image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     plt.imshow(img)
-    plt.axis('off')  # Tắt trục
+    plt.title(f'Predicted: {name_animal[predicted_class]}')  # Hiển thị tên động vật
+    plt.axis('off')
     plt.show()
 
-    # In ra dự đoán
-    print(f"Predicted Animal: {animals[predicted_class]}")
-    print(f"Probability: {probability * 100:.2f}%")
-
-# Test chương trình với một ảnh đầu vào
-image_path = 'path_to_your_image.jpg'  # Thay đổi đường dẫn đến ảnh của bạn
-display_image_and_prediction(image_path)
+# Ví dụ sử dụng: Dự đoán một ảnh từ tập test
+image_path = 'cat.jpg'  # Thay bằng đường dẫn ảnh của bạn
+predicted_class = predict_image(image_path)
+show_result(image_path, predicted_class)
